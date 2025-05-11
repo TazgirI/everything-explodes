@@ -1,6 +1,20 @@
 package net.tazgirl.everythingexplodes;
 
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.damagesource.DamageSources;
+import net.minecraft.world.damagesource.DamageTypes;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.level.BlockGetter;
+import net.minecraft.world.level.Explosion;
+import net.minecraft.world.level.ExplosionDamageCalculator;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.BedBlock;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.Vec3;
+import net.neoforged.neoforge.event.entity.living.LivingDamageEvent;
+import net.neoforged.neoforge.event.entity.player.ItemEntityPickupEvent;
 import net.neoforged.neoforge.event.level.BlockEvent;
 import org.slf4j.Logger;
 
@@ -50,6 +64,7 @@ public class EverythingExplodes
     private static final Logger LOGGER = LogUtils.getLogger();
 
     static float standardRadius = 1.0f;
+    private static Entity currentSourceEntity = null;
 
 
 
@@ -75,23 +90,144 @@ public class EverythingExplodes
 
     }
 
+    public static class CustomExplosionDamageCalculator extends ExplosionDamageCalculator
+    {
+        @Override
+        public boolean shouldDamageEntity(Explosion explosion, Entity entity)
+        {
+            return entity != currentSourceEntity;
+        }
+
+        @Override
+        public float getEntityDamageAmount(Explosion explosion, Entity entity)
+        {
+            float f = explosion.radius() * 2.0F;
+            Vec3 vec3 = explosion.center();
+            double d0 = Math.sqrt(entity.distanceToSqr(vec3)) / (double)f;
+            double d1 = (1.0 - d0) * (double)Explosion.getSeenPercent(vec3, entity);
+            return ((float)((d1 * d1 + d1) / 2.0 * 7.0 * (double)f + 1.0)) * 0.333f;
+        }
+
+        @Override
+        public boolean shouldBlockExplode(Explosion explosion, BlockGetter reader, BlockPos pos, BlockState state, float power)
+        {
+            return !(state.getBlock() instanceof BedBlock);
+        }
+
+        @Override
+        public float getKnockbackMultiplier(Entity entity)
+        {
+            if(entity.isCrouching())
+            {
+                return 0.2f;
+            }
+            return 1.0f;
+        }
+
+    }
+
+    public static class ItemPickupExplosionDamageCalculator extends ExplosionDamageCalculator
+    {
+        @Override
+        public float getEntityDamageAmount(Explosion explosion, Entity entity)
+        {
+            float f = explosion.radius() * 2.0F;
+            Vec3 vec3 = explosion.center();
+            double d0 = Math.sqrt(entity.distanceToSqr(vec3)) / (double)f;
+            double d1 = (1.0 - d0) * (double)Explosion.getSeenPercent(vec3, entity);
+            return ((float)((d1 * d1 + d1) / 2.0 * 7.0 * (double)f + 1.0)) * 0.1f;
+        }
+
+        @Override
+        public boolean shouldBlockExplode(Explosion explosion, BlockGetter reader, BlockPos pos, BlockState state, float power)
+        {
+            return false;
+        }
+
+        @Override
+        public float getKnockbackMultiplier(Entity entity)
+        {
+            if(entity.isCrouching())
+            {
+                return 0.1f;
+            }
+            return 0.4f;
+        }
+
+    }
+
+
+
 
     @SubscribeEvent
-    public static void onBlockBreak(BlockEvent.BreakEvent event)
+    public static void OnBlockBreak(BlockEvent.BreakEvent event)
     {
         if(event.getLevel() instanceof Level level)
         {
-            CauseExplosion(level, event.getPos().getX(), event.getPos().getY(), event.getPos().getZ(), standardRadius * event.getState().getDestroySpeed(level, event.getPos()));
+            CauseExplosionAfterTick(level, event.getPos().getX() + 0.5f, event.getPos().getY() + 0.5f, event.getPos().getZ() + 0.5f, standardRadius * event.getState().getDestroySpeed(level, event.getPos()));
+        }
+    }
+
+    @SubscribeEvent
+    public static void OnItemPickup(ItemEntityPickupEvent.Post event)
+    {
+        CauseExplosionAfterTickSmallerMin(event.getPlayer().level(), event.getPlayer().getX(), event.getPlayer().getY(), event.getPlayer().getZ(), 0.1f * event.getOriginalStack().getCount());
+    }
+
+    @SubscribeEvent
+    public static void OnEntityDamaged(LivingDamageEvent.Post event)
+    {
+        if(!event.getSource().is(DamageTypes.EXPLOSION))
+        {
+            currentSourceEntity = event.getEntity();
+            CauseExplosionDontDamageSource(event.getEntity().level(), event.getEntity().getBoundingBox().getCenter().x, event.getEntity().getY(), event.getEntity().getBoundingBox().getCenter().z, standardRadius * event.getNewDamage());
+        }
+    }
+
+    @SubscribeEvent
+    public static void OnBlockPlaced(BlockEvent.EntityPlaceEvent event)
+    {
+        if(event.getLevel() instanceof Level level)
+        {
+            CauseExplosionNoBlockBreak(level, event.getPos().getX() + 0.5f, event.getPos().getY() + 0.5f, event.getPos().getZ() + 0.5f, standardRadius * event.getState().getDestroySpeed(level, event.getPos()));
         }
     }
 
 
-    private static void CauseExplosion(Level level, double x, double y, double z, float radius)
+    private static void CauseExplosionAfterTick(Level level, double x, double y, double z, float radius)
     {
         if (!level.isClientSide)
         {
-            level.getServer().execute(() -> {level.explode(null, x + 0.5, y + 0.5, z + 0.5, Math.max(1, Math.min(radius, 1000000)), Level.ExplosionInteraction.MOB);});
+            level.getServer().execute(() -> {level.explode(null, null, new CustomExplosionDamageCalculator(), x, y, z, Math.max(0.4f, Math.min(radius, 1000000000000f)), false, Level.ExplosionInteraction.MOB);});
+            System.out.println(radius);
+        }
+    }
 
+    private static void CauseExplosionAfterTickSmallerMin(Level level, double x, double y, double z, float radius)
+    {
+        if (!level.isClientSide)
+        {
+            level.getServer().execute(() -> {level.explode(null, null, new ItemPickupExplosionDamageCalculator(), x, y, z, radius, false, Level.ExplosionInteraction.MOB);});
+            System.out.println(radius);
+        }
+    }
+
+    private static void CauseExplosionDontDamageSource(Level level, double x, double y, double z, float radius)
+    {
+        if (!level.isClientSide)
+        {
+            level.explode(null, null, new CustomExplosionDamageCalculator(), x, y, z, Math.max(0.4f, Math.min(radius, 1000000000000f)), false, Level.ExplosionInteraction.MOB);
+            currentSourceEntity = null;
+            System.out.println(radius);
+        }
+    }
+
+    private static void CauseExplosionNoBlockBreak(Level level, double x, double y, double z, float radius)
+    {
+        if (!level.isClientSide)
+        {
+            level.explode(null, null, new CustomExplosionDamageCalculator(), x, y, z, Math.max(0.4f, Math.min(radius, 1000000000000f)), false, Level.ExplosionInteraction.TRIGGER);
+            System.out.println(radius);
         }
     }
 }
