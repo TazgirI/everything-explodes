@@ -6,6 +6,7 @@ import net.minecraft.world.damagesource.DamageSources;
 import net.minecraft.world.damagesource.DamageTypes;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.Explosion;
 import net.minecraft.world.level.ExplosionDamageCalculator;
@@ -65,6 +66,7 @@ public class EverythingExplodes
 
     static float standardRadius = 1.0f;
     private static Entity currentSourceEntity = null;
+    private static float currentRadius = 0.0f;
 
 
 
@@ -95,7 +97,7 @@ public class EverythingExplodes
         @Override
         public boolean shouldDamageEntity(Explosion explosion, Entity entity)
         {
-            return entity != currentSourceEntity;
+            return entity != currentSourceEntity && !(entity instanceof ItemEntity);
         }
 
         @Override
@@ -135,7 +137,7 @@ public class EverythingExplodes
             Vec3 vec3 = explosion.center();
             double d0 = Math.sqrt(entity.distanceToSqr(vec3)) / (double)f;
             double d1 = (1.0 - d0) * (double)Explosion.getSeenPercent(vec3, entity);
-            return ((float)((d1 * d1 + d1) / 2.0 * 7.0 * (double)f + 1.0)) * 0.1f;
+            return ((float)((d1 * d1 + d1) / 2.0 * 7.0 * (double)f + 1.0)) * 0.075f;
         }
 
         @Override
@@ -151,7 +153,13 @@ public class EverythingExplodes
             {
                 return 0.1f;
             }
-            return 0.4f;
+            return Math.max(currentRadius, 0.5f);
+        }
+
+        @Override
+        public boolean shouldDamageEntity(Explosion explosion, Entity entity)
+        {
+            return !(entity instanceof ItemEntity);
         }
 
     }
@@ -207,7 +215,9 @@ public class EverythingExplodes
     {
         if (!level.isClientSide)
         {
+            currentRadius = radius;
             level.getServer().execute(() -> {level.explode(null, null, new ItemPickupExplosionDamageCalculator(), x, y, z, radius, false, Level.ExplosionInteraction.MOB);});
+            currentRadius = 0.0f;
             System.out.println(radius);
         }
     }
