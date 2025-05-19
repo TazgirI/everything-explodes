@@ -7,6 +7,7 @@ import net.minecraft.world.damagesource.DamageTypes;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.Explosion;
 import net.minecraft.world.level.ExplosionDamageCalculator;
@@ -56,15 +57,12 @@ import net.neoforged.neoforge.registries.DeferredRegister;
 @Mod(EverythingExplodes.MODID)
 public class EverythingExplodes
 {
-    //TODO: Implement Mixin to prevent items breaking, for the recording use EBNB and run "/gamerule ENID:all true"
-
-
     // Define mod id in a common place for everything to reference
     public static final String MODID = "everythingexplodes";
     // Directly reference a slf4j logger
     private static final Logger LOGGER = LogUtils.getLogger();
 
-    static float standardRadius = 1.0f;
+    static float standardRadius = 0.6666f;
     private static Entity currentSourceEntity = null;
     private static float currentRadius = 0.0f;
 
@@ -103,11 +101,19 @@ public class EverythingExplodes
         @Override
         public float getEntityDamageAmount(Explosion explosion, Entity entity)
         {
+            if (entity instanceof Player)
+            {
+                float f = explosion.radius() * 2.0F;
+                Vec3 vec3 = explosion.center();
+                double d0 = Math.sqrt(entity.distanceToSqr(vec3)) / (double)f;
+                double d1 = (1.0 - d0) * (double)Explosion.getSeenPercent(vec3, entity);
+                return ((float)((d1 * d1 + d1) / 2.0 * 7.0 * (double)f + 1.0)) * 0.2f;
+            }
             float f = explosion.radius() * 2.0F;
             Vec3 vec3 = explosion.center();
             double d0 = Math.sqrt(entity.distanceToSqr(vec3)) / (double)f;
             double d1 = (1.0 - d0) * (double)Explosion.getSeenPercent(vec3, entity);
-            return ((float)((d1 * d1 + d1) / 2.0 * 7.0 * (double)f + 1.0)) * 0.333f;
+            return ((float)((d1 * d1 + d1) / 2.0 * 7.0 * (double)f + 1.0)) * 0.433333f;
         }
 
         @Override
@@ -137,7 +143,7 @@ public class EverythingExplodes
             Vec3 vec3 = explosion.center();
             double d0 = Math.sqrt(entity.distanceToSqr(vec3)) / (double)f;
             double d1 = (1.0 - d0) * (double)Explosion.getSeenPercent(vec3, entity);
-            return ((float)((d1 * d1 + d1) / 2.0 * 7.0 * (double)f + 1.0)) * 0.075f;
+            return ((float)((d1 * d1 + d1) / 2.0 * 7.0 * (double)f + 1.0)) * 0.05f;
         }
 
         @Override
@@ -179,7 +185,11 @@ public class EverythingExplodes
     @SubscribeEvent
     public static void OnItemPickup(ItemEntityPickupEvent.Post event)
     {
-        CauseExplosionAfterTickSmallerMin(event.getPlayer().level(), event.getPlayer().getX(), event.getPlayer().getY(), event.getPlayer().getZ(), 0.1f * event.getOriginalStack().getCount());
+        if(!event.getPlayer().isCrouching())
+        {
+            CauseExplosionAfterTickSmallerMin(event.getPlayer().level(), event.getPlayer().getX(), event.getPlayer().getY(), event.getPlayer().getZ(), 0.1f * event.getOriginalStack().getCount());
+
+        }
     }
 
     @SubscribeEvent
@@ -197,7 +207,10 @@ public class EverythingExplodes
     {
         if(event.getLevel() instanceof Level level)
         {
-            CauseExplosionNoBlockBreak(level, event.getPos().getX() + 0.5f, event.getPos().getY() + 0.5f, event.getPos().getZ() + 0.5f, standardRadius * event.getState().getDestroySpeed(level, event.getPos()));
+            if(!event.getEntity().isCrouching())
+            {
+                CauseExplosionAfterTick(level, event.getPos().getX() + 0.5f, event.getPos().getY() + 0.5f, event.getPos().getZ() + 0.5f, standardRadius * event.getState().getDestroySpeed(level, event.getPos()));
+            }
         }
     }
 
